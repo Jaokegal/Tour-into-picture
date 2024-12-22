@@ -1,0 +1,67 @@
+function morphedImg = morph_to_rectangle(img, poly, outputSize)
+    % This function maps a general quadrilateral in the input image, described by the points
+    % passed in poly onto a regularly shaped rectangle of dimension outputSize
+    % Input parameters:
+    % img: image from which the polygon shall be cropped
+    % poly: [x1, x2, ...; y1, y2, ...] array containing the nodes
+    % describing the polygon shape to be cropped
+    % outputSize: ["height", "width"] of the output rectangle
+    % Return value:
+    % morphedImg: image with the dimensions specified in outputSize
+
+    % check for padding necessity and in case create appropriate one:
+    % get image dimensions:
+    [im_h, im_w] = size(img, [1, 2]);
+    %pol
+    if any(poly(:)<0) || any(poly(1, :)>im_w) || any(poly(2, :)>im_h)
+        min_x = min( round(poly(1, :), 0) );
+        max_x = max( round(poly(1, :), 0) ) - im_w;
+        min_y = min( round(poly(2, :), 0) );
+        max_y = max( round(poly(2, :), 0) ) - im_h;
+        padded_img = padarray(img ,[abs(min_y), abs(min_x)],0 ,'pre');
+        img = padarray(padded_img ,[abs(max_y), abs(max_x)],0 ,'post');
+        % shift coordinates:
+        outputSize(1, 2) = outputSize(1, 2) + abs(min_x);
+        outputSize(1, 1) = outputSize(1, 1) + abs(min_y);
+        poly(1, :) = poly(1, :) + abs(min_x);
+        poly(2, :) = poly(2, :) + abs(min_y);
+    end
+
+    % Create a binary mask from the polygon:
+    mask = roipoly(img, poly(1, :), poly(2, :));
+
+    % Crop the image:
+    croppedImg = bsxfun(@times, img, cast(mask, 'like', img));
+
+    % Get bounding box for cropping polygon:
+    stats = regionprops(mask, 'BoundingBox');
+    boundingBox = ceil(stats.BoundingBox);
+
+    % Crop the bounding box region from image:
+    croppedImg = croppedImg(boundingBox(2):(boundingBox(2) + boundingBox(4) - 1), ...
+                            boundingBox(1):(boundingBox(1) + boundingBox(3) - 1), :);
+
+    % Adjust the polygon coordinates to the cropped image's coordinate system
+    xCropped = poly(1, :) - boundingBox(1) + 1;
+    yCropped = poly(2, :) - boundingBox(2) + 1;
+
+    % Transformation:
+    % Define destination points for the rectangle:
+    destX = [1, outputSize(2), outputSize(2), 1];
+    destY = [1, 1, outputSize(1), outputSize(1)];
+
+    % Create transformation matrix with buildin function:
+    tform = fitgeotrans([xCropped', yCropped'], [destX', destY'], 'projective');
+
+    % Warp cropped image to rectangle:
+    morphedImg = imwarp(croppedImg, tform, 'OutputView', imref2d(outputSize));
+
+    % Display original vs. cropped image:
+    figure, subplot(2,1,1);
+    imshow(croppedImg), title('Cropped Image with Polygon');
+    hold on;
+    plot([xCropped xCropped(1)], [yCropped yCropped(1)], 'r-', 'LineWidth', 2);
+    subplot(2,1,2);
+    imshow(morphedImg), title('Morphed Image to Rectangle');
+
+end
